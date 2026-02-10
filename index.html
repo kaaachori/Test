@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Security Header VAPT Reporter</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 0; background: #0b1020; color: #e9eefb;">
+  <div style="max-width: 980px; margin: 40px auto; padding: 24px;">
+    <h1 style="margin: 0 0 8px;">Security Header VAPT Reporter</h1>
+    <p style="margin: 0 0 20px; color: #b8c2e8;">Enter any HTTP/HTTPS URL to analyze response security headers and generate a detailed VAPT-like report.</p>
+
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+      <input id="urlInput" type="url" placeholder="https://example.com"
+             style="flex: 1; min-width: 280px; padding: 12px; border-radius: 8px; border: 1px solid #2f3b68; background: #101935; color: #e9eefb;" />
+      <button id="scanBtn"
+              style="padding: 12px 18px; border: 0; border-radius: 8px; background: #4e7bff; color: #fff; font-weight: bold; cursor: pointer;">
+        Scan & Generate Report
+      </button>
+    </div>
+
+    <div id="status" style="margin-bottom: 14px; color: #9fb0ea;"></div>
+    <div id="report"></div>
+  </div>
+
+  <script>
+    const scanBtn = document.getElementById('scanBtn');
+    const urlInput = document.getElementById('urlInput');
+    const statusBox = document.getElementById('status');
+    const reportBox = document.getElementById('report');
+
+    function esc(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function badgeFor(status) {
+      if (status === 'good') return '<span style="background:#1f8f4a;padding:2px 8px;border-radius:999px;">GOOD</span>';
+      if (status === 'misconfigured') return '<span style="background:#d18b00;padding:2px 8px;border-radius:999px;">MISCONFIGURED</span>';
+      return '<span style="background:#c13c49;padding:2px 8px;border-radius:999px;">MISSING</span>';
+    }
+
+    function renderReport(data) {
+      const findingsHtml = data.findings.map((f, i) => `
+        <div style="background:#131d3f;border:1px solid #2c3967;border-radius:10px;padding:12px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+            <strong>${i + 1}. ${esc(f.header)}</strong>
+            ${badgeFor(f.status)}
+          </div>
+          <div style="margin-top:8px;color:#b8c2e8;"><strong>Severity:</strong> ${esc(f.severity)}</div>
+          <div style="margin-top:6px;color:#b8c2e8;"><strong>Impact:</strong> ${esc(f.impact)}</div>
+          <div style="margin-top:6px;color:#b8c2e8;"><strong>Recommendation:</strong> ${esc(f.recommendation)}</div>
+        </div>`).join('');
+
+      const allHeaders = Object.entries(data.all_headers)
+        .map(([k, v]) => `<li style="margin-bottom:4px;"><code>${esc(k)}</code>: ${esc(v)}</li>`)
+        .join('');
+
+      reportBox.innerHTML = `
+        <div style="background:#111834;border:1px solid #2f3b68;border-radius:12px;padding:16px;">
+          <h2 style="margin:0 0 10px;">Detailed VAPT-Style Report</h2>
+          <p style="margin:0 0 6px;"><strong>Target:</strong> ${esc(data.target)}</p>
+          <p style="margin:0 0 6px;"><strong>HTTP Status:</strong> ${esc(data.http_status)}</p>
+          <p style="margin:0 0 6px;"><strong>Security Score:</strong> ${esc(data.score)}/100</p>
+          <p style="margin:0 0 10px;"><strong>Risk Rating:</strong> ${esc(data.risk_rating)}</p>
+          <p style="margin:0 0 16px;color:#b8c2e8;">${esc(data.summary)}</p>
+
+          <h3 style="margin:0 0 8px;">Findings</h3>
+          ${findingsHtml}
+
+          <h3 style="margin:14px 0 8px;">Raw Response Headers</h3>
+          <ul style="margin:0;padding-left:18px;color:#c8d2f7;">${allHeaders}</ul>
+        </div>`;
+    }
+
+    async function runScan() {
+      const url = urlInput.value.trim();
+      if (!url) {
+        statusBox.textContent = 'Please enter a URL first.';
+        return;
+      }
+
+      statusBox.textContent = 'Scanning and generating detailed report...';
+      reportBox.innerHTML = '';
+      scanBtn.disabled = true;
+      scanBtn.style.opacity = '0.7';
+
+      try {
+        const res = await fetch(`/api/check?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Scan failed');
+        statusBox.textContent = 'Scan complete.';
+        renderReport(data);
+      } catch (err) {
+        statusBox.textContent = `Error: ${err.message}`;
+      } finally {
+        scanBtn.disabled = false;
+        scanBtn.style.opacity = '1';
+      }
+    }
+
+    scanBtn.addEventListener('click', runScan);
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') runScan();
+    });
+  </script>
+</body>
+</html>
