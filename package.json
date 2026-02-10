@@ -1,0 +1,10 @@
+{
+  "name": "security-header-vapt-reporter",
+  "version": "1.0.0",
+  "description": "Inline CSS + JS web app that checks security headers and generates a detailed VAPT-like report",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  }
+}

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Security Header VAPT Analyzer</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0;">
+  <main style="max-width: 960px; margin: 40px auto; padding: 24px; background: #1e293b; border-radius: 14px; box-shadow: 0 10px 35px rgba(0,0,0,0.35);">
+    <h1 style="margin-top: 0; color: #38bdf8;">Security Header VAPT-like Report Generator</h1>
+    <p style="line-height: 1.6; color: #cbd5e1;">
+      Enter any URL to inspect critical HTTP security headers and generate a detailed assessment report.
+    </p>
+
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0;">
+      <input id="urlInput" type="url" placeholder="https://example.com"
+             style="flex: 1; min-width: 260px; padding: 12px; border: 1px solid #334155; border-radius: 8px; background: #0b1220; color: #fff;" />
+      <button id="scanBtn"
+              style="padding: 12px 20px; border: none; border-radius: 8px; background: #0284c7; color: white; font-weight: 600; cursor: pointer;">
+        Analyze URL
+      </button>
+    </div>
+
+    <p id="status" style="min-height: 24px; color: #93c5fd;"></p>
+
+    <section id="report" style="display:none; margin-top: 20px;">
+      <div id="summary" style="padding: 16px; background: #0b1220; border: 1px solid #334155; border-radius: 10px;"></div>
+      <h2 style="margin-top: 24px; color: #7dd3fc;">Findings</h2>
+      <div id="findings" style="display: grid; gap: 12px;"></div>
+      <h2 style="margin-top: 24px; color: #7dd3fc;">Recommendations</h2>
+      <ul id="recommendations" style="line-height: 1.6;"></ul>
+      <h2 style="margin-top: 24px; color: #7dd3fc;">Limitations</h2>
+      <ul id="limitations" style="line-height: 1.6;"></ul>
+    </section>
+  </main>
+
+  <script>
+    const scanBtn = document.getElementById('scanBtn');
+    const urlInput = document.getElementById('urlInput');
+    const statusEl = document.getElementById('status');
+    const reportEl = document.getElementById('report');
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function badgeColor(status) {
+      if (status === 'present') return '#16a34a';
+      if (status === 'misconfigured') return '#f97316';
+      return '#dc2626';
+    }
+
+    scanBtn.addEventListener('click', async () => {
+      const url = urlInput.value.trim();
+      if (!url) {
+        statusEl.textContent = 'Please enter a target URL.';
+        return;
+      }
+
+      reportEl.style.display = 'none';
+      statusEl.textContent = 'Scanning headers and generating report...';
+      scanBtn.disabled = true;
+
+      try {
+        const response = await fetch('/api/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to analyze target URL.');
+        }
+
+        const summary = document.getElementById('summary');
+        summary.innerHTML = `
+          <h3 style="margin-top:0; color:#bae6fd;">Executive Summary</h3>
+          <p><strong>Target:</strong> ${escapeHtml(data.metadata.targetUrl)}</p>
+          <p><strong>HTTP Status:</strong> ${escapeHtml(data.metadata.statusCode)}</p>
+          <p><strong>Security Header Score:</strong> ${escapeHtml(data.metadata.score)}/100</p>
+          <p>${escapeHtml(data.executiveSummary)}</p>
+        `;
+
+        const findings = document.getElementById('findings');
+        findings.innerHTML = data.findings.map(item => `
+          <article style="padding: 14px; border-radius: 10px; border: 1px solid #334155; background: #0b1220;">
+            <div style="display:flex; justify-content:space-between; gap: 10px; align-items:center;">
+              <h4 style="margin:0; color:#e2e8f0;">${escapeHtml(item.title)}</h4>
+              <span style="background:${badgeColor(item.status)}; color:white; padding:4px 10px; border-radius:999px; font-size:12px; text-transform:uppercase;">${escapeHtml(item.status)}</span>
+            </div>
+            <p><strong>Severity:</strong> ${escapeHtml(item.severity)}</p>
+            <p><strong>Observed Value:</strong> ${escapeHtml(item.value)}</p>
+            <p><strong>Details:</strong> ${escapeHtml(item.details)}</p>
+          </article>
+        `).join('');
+
+        const recommendations = document.getElementById('recommendations');
+        recommendations.innerHTML = data.recommendations.map(rec => `
+          <li>
+            <strong>${escapeHtml(rec.header)}</strong> (${escapeHtml(rec.severity)}):
+            ${escapeHtml(rec.action)}
+            <br><span style="color:#93c5fd;">Why: ${escapeHtml(rec.rationale)}</span>
+          </li>
+        `).join('') || '<li>No remediation items. Great job!</li>';
+
+        const limitations = document.getElementById('limitations');
+        limitations.innerHTML = data.limitations.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+
+        reportEl.style.display = 'block';
+        statusEl.textContent = 'Report generated successfully.';
+      } catch (error) {
+        statusEl.textContent = `Error: ${error.message}`;
+      } finally {
+        scanBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
