@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deep VAPT Web Scanner</title>
+</head>
+<body style="margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#0f0f10;color:#ececec;">
+  <div style="max-width:1100px;margin:28px auto;padding:22px;">
+    <h1 style="margin:0 0 8px;color:#f4f4f5;">Deep VAPT Web Scanner</h1>
+    <p style="margin:0 0 18px;color:#b5b5b8;">Scan a URL for a deep baseline security review (headers, TLS, cookies, CORS, methods, sensitive files, and lightweight reflection checks).</p>
+
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+      <input id="urlInput" type="url" placeholder="https://example.com"
+        style="flex:1;min-width:290px;padding:12px 13px;border-radius:9px;border:1px solid #343438;background:#18181b;color:#f4f4f5;" />
+      <button id="scanBtn"
+        style="padding:12px 18px;border-radius:9px;border:1px solid #3f3f46;background:#27272a;color:#f4f4f5;font-weight:700;cursor:pointer;">
+        Run Deep Scan
+      </button>
+      <button id="pdfBtn"
+        style="padding:12px 18px;border-radius:9px;border:1px solid #3f3f46;background:#1f1f22;color:#f4f4f5;font-weight:700;cursor:pointer;" disabled>
+        Download PDF Report
+      </button>
+    </div>
+
+    <div id="status" style="margin:8px 0 15px;color:#a1a1aa;"></div>
+    <div id="report"></div>
+  </div>
+
+  <script>
+    const scanBtn = document.getElementById('scanBtn');
+    const pdfBtn = document.getElementById('pdfBtn');
+    const urlInput = document.getElementById('urlInput');
+    const statusBox = document.getElementById('status');
+    const reportBox = document.getElementById('report');
+
+    let currentReportId = null;
+
+    function esc(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function sevColor(sev) {
+      if (sev === 'Critical') return '#f43f5e';
+      if (sev === 'High') return '#ef4444';
+      if (sev === 'Medium') return '#f59e0b';
+      if (sev === 'Low') return '#22c55e';
+      return '#a1a1aa';
+    }
+
+    function renderReport(data) {
+      const counts = data.finding_counts || {};
+      const countHtml = ['Critical','High','Medium','Low','Info'].map(k => `
+        <div style="background:#1b1b1f;border:1px solid #323238;border-radius:10px;padding:10px;">
+          <div style="font-size:12px;color:#a1a1aa;">${k}</div>
+          <div style="font-size:20px;font-weight:800;color:${sevColor(k)};">${counts[k] || 0}</div>
+        </div>`).join('');
+
+      const findings = (data.findings || []).map((f, i) => `
+        <div style="background:#17171a;border:1px solid #2f2f35;border-radius:11px;padding:14px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+            <strong style="color:#fafafa;">${i + 1}. ${esc(f.title)}</strong>
+            <span style="padding:2px 10px;border-radius:999px;border:1px solid #3f3f46;color:${sevColor(f.severity)};">${esc(f.severity)}</span>
+          </div>
+          <div style="margin-top:7px;color:#a1a1aa;"><strong style="color:#d4d4d8;">Category:</strong> ${esc(f.category)}</div>
+          <div style="margin-top:6px;color:#a1a1aa;"><strong style="color:#d4d4d8;">Evidence:</strong> ${esc(f.evidence)}</div>
+          <div style="margin-top:6px;color:#a1a1aa;"><strong style="color:#d4d4d8;">Recommendation:</strong> ${esc(f.recommendation)}</div>
+        </div>`).join('');
+
+      const pages = (data.pages_analyzed || []).map(p => `<li><code>${esc(p.url)}</code> — HTTP ${esc(p.status)}</li>`).join('');
+
+      const tls = data.tls || {};
+      const tlsHtml = tls.checked
+        ? `<div style="color:#a1a1aa;line-height:1.7;">Protocol: ${esc(tls.protocol || 'n/a')}<br/>Cert expiry (days): ${esc(tls.expiry_days ?? 'n/a')}<br/>Issuer: ${esc(JSON.stringify(tls.issuer || {}))}</div>`
+        : `<div style="color:#71717a;">${esc(tls.message || 'TLS not checked')}</div>`;
+
+      reportBox.innerHTML = `
+        <div style="background:#121215;border:1px solid #2b2b31;border-radius:13px;padding:16px;">
+          <h2 style="margin:0 0 8px;color:#fafafa;">VAPT Report</h2>
+          <p style="margin:0 0 6px;color:#c7c7ce;"><strong>Target:</strong> ${esc(data.target)}</p>
+          <p style="margin:0 0 6px;color:#c7c7ce;"><strong>Generated:</strong> ${esc(data.generated_at)}</p>
+          <p style="margin:0 0 6px;color:#c7c7ce;"><strong>Status / Score / Risk:</strong> HTTP ${esc(data.http_status)} • ${esc(data.score)}/100 • ${esc(data.risk_rating)}</p>
+          <p style="margin:0 0 14px;color:#a1a1aa;">${esc(data.summary)}</p>
+
+          <h3 style="margin:0 0 8px;color:#e4e4e7;">Issue Distribution</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px;">${countHtml}</div>
+
+          <h3 style="margin:0 0 8px;color:#e4e4e7;">TLS Overview</h3>
+          <div style="background:#1b1b1f;border:1px solid #303036;border-radius:10px;padding:10px;margin-bottom:14px;">${tlsHtml}</div>
+
+          <h3 style="margin:0 0 8px;color:#e4e4e7;">Findings</h3>
+          ${findings || '<div style="color:#86efac;">No findings from automated checks.</div>'}
+
+          <h3 style="margin:10px 0 8px;color:#e4e4e7;">Pages Analyzed</h3>
+          <ul style="margin:0;padding-left:18px;color:#a1a1aa;line-height:1.65;">${pages}</ul>
+        </div>`;
+    }
+
+    async function runScan() {
+      const url = urlInput.value.trim();
+      if (!url) {
+        statusBox.textContent = 'Please enter a target URL first.';
+        return;
+      }
+      statusBox.textContent = 'Running deep scan... this can take a little while.';
+      reportBox.innerHTML = '';
+      currentReportId = null;
+      pdfBtn.disabled = true;
+      scanBtn.disabled = true;
+      scanBtn.style.opacity = '0.7';
+
+      try {
+        const res = await fetch(`/api/check?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Scan failed.');
+        renderReport(data);
+        currentReportId = data.report_id;
+        pdfBtn.disabled = !currentReportId;
+        statusBox.textContent = 'Deep scan complete.';
+      } catch (err) {
+        statusBox.textContent = `Error: ${err.message}`;
+      } finally {
+        scanBtn.disabled = false;
+        scanBtn.style.opacity = '1';
+      }
+    }
+
+    function downloadPdf() {
+      if (!currentReportId) return;
+      window.open(`/api/report/pdf?id=${encodeURIComponent(currentReportId)}`, '_blank');
+    }
+
+    scanBtn.addEventListener('click', runScan);
+    pdfBtn.addEventListener('click', downloadPdf);
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') runScan();
+    });
+  </script>
+</body>
+</html>
